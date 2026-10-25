@@ -82,9 +82,3 @@ Run `./install.sh` as a normal user. Review `install.sh` and `profiles/` before 
 ```bash
 sudo rm -f /usr/local/bin/ps5-power-control /usr/local/bin/ps5-power /usr/local/bin/ps5-powersave /usr/local/bin/ps5-normal /usr/local/bin/ps5-performance /etc/sudoers.d/ps5-power-control
 ```
-
-## Compact htop-style meters
-Single-line meters show total CPU utilization (all CPUs combined, 0–100%), RAM usage, CPU temperature, and frequency. No per-core meters or historical charts. CPU utilization uses deltas of aggregate /proc/stat counters, excluding guest double counting; idle includes iowait. The first reading is unavailable until a second sample exists.
-CPU frequency reference: 3.5 GHz; display scale: 3.675 GHz. Memory reference: Linux MemTotal; used = MemTotal - MemAvailable; scale = total +5%. Temperature reference: CPU hwmon critical limit or configurable 100 °C display fallback (not a PS5 safety rating); scale = reference +5%. Override with PS5_TEMP_MAX_C. Colors: below 90% green, at 90% orange, above 90% red; thresholds are calculated before the scale margin.
-English/Spanish selector loads languages/en.xml and es.xml and saves the selection in ~/.config/ps5-power-control/settings.json (respects XDG_CONFIG_HOME). English is the initial default. XML files are bundled in the compiled executable.
-Version remains 0.1 until explicitly requested otherwise. Build the executable on the PS5 with ./install.sh; bin/ contains the result.
