@@ -2,6 +2,14 @@
 
 An SSH-friendly terminal dashboard for **PS5 Linux / Ubuntu 26.04**. It monitors CPU temperature, clock frequency, and the active CPU governor, with 90-sample temperature and frequency sparklines. Three buttons and shortcuts select the CPU governor. **English is the default language** for the application, installation scripts, and documentation.
 
+## Disclaimer
+
+**Version: 0.1**
+
+PS5 Power Control was programmed with the assistance of OpenAI Codex.
+
+This software is provided "as is", without warranty of any kind, express or implied. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors, maintainers, and contributors accept no responsibility or liability for any damage, data loss, hardware failure, system instability, or other loss arising from installing, using, modifying, or being unable to use this software.
+
 ## Project layout
 
 ```text
