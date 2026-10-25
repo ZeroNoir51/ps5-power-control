@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<language code="es">
+  <string id="temp">Temperatura</string>
+  <string id="freq">Frecuencia CPU</string>
+  <string id="memory">Memoria usada</string>
+  <string id="governor">Gobernador</string>
+  <string id="powersave">Ahorro</string>
+  <string id="normal">Normal</string>
+  <string id="performance">Rendimiento</string>
+  <string id="ready">Listo</string>
+  <string id="switching">Aplicando perfil…</string>
+  <string id="success">Perfil aplicado</string>
+  <string id="error">Error al aplicar el perfil. Revisa los perfiles instalados y permisos sudo.</string>
+  <string id="unavailable">No disponible</string>
+  <string id="save_error">No se puede guardar el idioma.</string>
+  <string id="help">1/2/3: perfil · Q: salir · Actualización: 1 segundo</string>
+  <string id="legend">Verde: &lt;90% · Naranja: 90% · Rojo: &gt;90% del límite de referencia. Escala: referencia +5%.</string>
+  <string id="usage">CPU total</string>
+</language>

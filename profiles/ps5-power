@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# PS5 CPU frequency governor control. Installed root-owned.
+set -euo pipefail
+mode="${1:-}"
+case "$mode" in
+  powersave|performance|schedutil) ;;
+  *) echo "Usage: ps5-power {powersave|performance|schedutil}" >&2; exit 2 ;;
+esac
+shopt -s nullglob
+policies=(/sys/devices/system/cpu/cpufreq/policy*)
+((${#policies[@]})) || { echo "ERROR: no cpufreq policies found" >&2; exit 1; }
+# Validate every available policy before making any changes.
+for p in "${policies[@]}"; do
+  [[ -w "$p/scaling_governor" ]] || { echo "ERROR: cannot write $p/scaling_governor" >&2; exit 1; }
+  grep -qw "$mode" "$p/scaling_available_governors" || { echo "ERROR: $mode not supported by $p" >&2; exit 1; }
+done
+for p in "${policies[@]}"; do
+  printf '%s\n' "$mode" > "$p/scaling_governor"
+done
+for p in "${policies[@]}"; do
+  printf '%s: %s | ' "$(basename "$p")" "$(cat "$p/scaling_governor")"
+  if [[ -r "$p/scaling_cur_freq" ]]; then
+    awk '{printf "%.2f GHz\n", $1/1000000}' "$p/scaling_cur_freq"
+  else
+    printf 'Frequency unavailable\n'
+  fi
+done

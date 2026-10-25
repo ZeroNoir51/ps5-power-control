@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ps5-power-control"
+version = "0.1"
+description = "Terminal power profile dashboard for PS5 Linux"
+requires-python = ">=3.10"
+dependencies = ["textual>=0.80,<9"]
+
+[project.scripts]
+ps5-power-control = "ps5_power_control.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ps5_power_control = ["languages/*.xml"]

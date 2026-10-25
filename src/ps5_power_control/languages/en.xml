@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<language code="en">
+  <string id="temp">Temperature</string>
+  <string id="freq">CPU frequency</string>
+  <string id="memory">Memory used</string>
+  <string id="governor">Governor</string>
+  <string id="powersave">Power save</string>
+  <string id="normal">Normal</string>
+  <string id="performance">Performance</string>
+  <string id="ready">Ready</string>
+  <string id="switching">Applying profile…</string>
+  <string id="success">Profile applied</string>
+  <string id="error">Profile failed. Check installed profiles and sudo permissions.</string>
+  <string id="unavailable">Unavailable</string>
+  <string id="save_error">Cannot save language preference.</string>
+  <string id="help">1/2/3: profile · Q: quit · Refresh: 1 second</string>
+  <string id="legend">Green: &lt;90% · Orange: 90% · Red: &gt;90% of reference limit. Scale: reference +5%.</string>
+  <string id="usage">CPU total</string>
+</language>
