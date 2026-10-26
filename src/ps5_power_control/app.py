@@ -5,12 +5,13 @@ import os
 import sys
 import json
 import asyncio
+import socket
 import xml.etree.ElementTree as ET
 from rich.text import Text
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Footer, Header, Static, Select
+from textual.widgets import Button, Footer, Header, Static, Select, Input
 
 CPU = Path('/sys/devices/system/cpu/cpufreq/policy0')
 
@@ -43,6 +44,23 @@ def temperature():
                 if value is not None:
                     return value, name
     return None, 'sensor not found'
+
+
+def hardware_request(request):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(3)
+        sock.connect('/run/ps5-power-control/control.sock')
+        sock.sendall((json.dumps(request) + '\n').encode())
+        data = b''
+        while b'\n' not in data and len(data) < 65536:
+            part = sock.recv(4096)
+            if not part:
+                break
+            data += part
+    response = json.loads(data.split(b'\n', 1)[0])
+    if not response.get('success'):
+        raise ValueError(response.get('error', 'Service error'))
+    return response['data']
 
 
 CPU_MAX = 3.5
@@ -126,7 +144,11 @@ class PowerApp(App):
     .meter { height: 1; margin: 0 1; }
     #governor, #legend, #help, #status { height: auto; padding: 1; }
     #controls { height: auto; }
-    Button { min-width: 16; margin: 0 1; }
+    Button { min-width: 12; margin: 0 1; }
+    Input { width: 16; margin: 0 1; }
+    #hwstatus, #sensors, #hardware-title, #gpu-title, #fan-title { height: auto; padding: 0 1; }
+    .row { height: auto; }
+    .row Select { width: 16; }
     """
     BINDINGS = [('1', 'profile("powersave")', ''),
                 ('2', 'profile("normal")', ''),
@@ -152,6 +174,8 @@ class PowerApp(App):
         self.temp_max = temperature_limit()
         self.busy = False
         self.status_key = 'ready'
+        self.hardware = None
+        self.hw_busy = False
 
     def tr(self, key):
         return self.languages[self.lang].get(key, key)
@@ -166,16 +190,61 @@ class PowerApp(App):
         with Horizontal(id='controls'):
             for name in ('powersave', 'normal', 'performance'):
                 yield Button(id=name)
+        yield Static(id='hardware-title')
+        yield Static(id='gpu-title')
+        yield Static(id='hwstatus', markup=False)
+        with Horizontal(classes='row'):
+            yield Select([('Ondemand', 'simple_ondemand'), ('Performance', 'performance'), ('Powersave', 'powersave'), ('Userspace', 'userspace')], id='gpu-governor')
+            yield Button(id='apply-gpu')
+        with Horizontal(classes='row'):
+            yield Input(placeholder='MHz / auto', id='gpu-clock')
+            yield Button(id='apply-clock')
+            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='gpu-restore')
+            yield Button(id='save-gpu-restore')
+        yield Static(id='fan-title')
+        yield Static(id='sensors', markup=False)
+        with Horizontal(classes='row'):
+            yield Select([(self.tr('quiet') + ' 85°C', 85), (self.tr('default') + ' 80°C', 80), (self.tr('balanced') + ' 72°C', 72), (self.tr('cool') + ' 65°C', 65), (self.tr('maxcool') + ' 50°C', 50)], id='fan-preset')
+            yield Button(id='apply-preset')
+            yield Input(placeholder='40–90 °C', id='fan-target')
+            yield Button(id='apply-target')
+        with Horizontal(classes='row'):
+            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='fan-restore')
+            yield Button(id='save-fan-restore')
+            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='guard')
+            yield Button(id='save-guard')
+        with Horizontal(classes='row'):
+            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='alarm')
+            yield Button(id='save-alarm')
+            yield Input(placeholder='80–100 °C', id='threshold')
+            yield Button(id='save-threshold')
         yield Static(id='status', markup=False)
         yield Static(id='help')
 
     def on_mount(self):
         self.translate()
         self.set_interval(1, self.refresh_metrics)
+        self.set_interval(2, self.poll_hardware)
+        self.poll_hardware()
 
     def translate(self):
         for i, name in enumerate(('powersave', 'normal', 'performance'), 1):
             self.query_one('#' + name, Button).label = f'{i} · {self.tr(name)}'
+        for name in ('hardware-title', 'gpu-title', 'fan-title'):
+            self.query_one('#' + name, Static).update(self.tr(name))
+        for name in ('apply-gpu', 'apply-clock', 'save-gpu-restore', 'apply-preset', 'apply-target', 'save-fan-restore', 'save-guard', 'save-alarm', 'save-threshold'):
+            self.query_one('#' + name, Button).label = self.tr(name)
+        for name in ('gpu-restore', 'fan-restore', 'guard', 'alarm'):
+            widget = self.query_one('#' + name, Select)
+            old = widget.value
+            widget.set_options([(self.tr('on'), 'on'), (self.tr('off'), 'off')])
+            if old in ('on', 'off'):
+                widget.value = old
+        widget = self.query_one('#fan-preset', Select)
+        old = widget.value
+        widget.set_options([(self.tr('quiet') + ' 85°C', 85), (self.tr('default') + ' 80°C', 80), (self.tr('balanced') + ' 72°C', 72), (self.tr('cool') + ' 65°C', 65), (self.tr('maxcool') + ' 50°C', 50)])
+        if old in (85, 80, 72, 65, 50):
+            widget.value = old
         self.query_one('#legend', Static).update(self.tr('legend'))
         self.query_one('#help', Static).update(self.tr('help'))
         self.query_one('#status', Static).update(self.tr(self.status_key))
@@ -209,7 +278,68 @@ class PowerApp(App):
             self.refresh_metrics()
 
     def on_button_pressed(self, event: Button.Pressed):
-        self.action_profile(event.button.id)
+        name = event.button.id
+        if name in ('powersave', 'normal', 'performance'):
+            self.action_profile(name)
+        else:
+            self.run_worker(self.hardware_action(name))
+
+    def poll_hardware(self):
+        if not self.hw_busy:
+            self.run_worker(self.get_hardware())
+
+    async def get_hardware(self):
+        self.hw_busy = True
+        try:
+            data = await asyncio.to_thread(hardware_request, {'action': 'status'})
+            self.hardware = data
+            g = data['gpu']
+            text = self.tr('gpu-status').format(gov=g['governor'] or '—', current=g['current'], target=g['target'], minimum=g['min'], maximum=g['max'], available=', '.join(map(str, g['frequencies'])) or '—')
+            state = data['state']
+            text += '\n' + self.tr('state-status').format(fan=data['fan'] or '—', gpu_restore=state['gpu_restore'], fan_restore=state['fan_restore'], guard=state['guard'], alarm=state['alarm'], threshold=state['threshold'], active=data['guard_active'])
+            if data['error']:
+                text += '\n' + data['error']
+            self.query_one('#hwstatus', Static).update(text)
+            display = Text()
+            for sensor in data['sensors']:
+                value = sensor['temp']
+                color = 'red' if value >= state['threshold'] else '#ffaf00' if value >= state['threshold'] * .9 else 'green'
+                display.append(f"{sensor['chip']} {sensor['label']}: {value:.1f} °C  ", style=color)
+            if not data['sensors']:
+                display.append(self.tr('no-sensors'))
+            self.query_one('#sensors', Static).update(display)
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            self.query_one('#hwstatus', Static).update(self.tr('service-error') + ': ' + str(e))
+        finally:
+            self.hw_busy = False
+
+    async def hardware_action(self, name):
+        try:
+            if name == 'apply-gpu':
+                req = {'action': 'gpu_governor', 'value': self.query_one('#gpu-governor', Select).value}
+            elif name == 'apply-clock':
+                raw = self.query_one('#gpu-clock', Input).value.strip().lower()
+                req = {'action': 'gpu_clock', 'value': None if raw == 'auto' else int(raw)}
+            elif name == 'apply-preset':
+                req = {'action': 'fan', 'value': self.query_one('#fan-preset', Select).value}
+            elif name == 'apply-target':
+                req = {'action': 'fan', 'value': int(self.query_one('#fan-target', Input).value)}
+            elif name == 'save-threshold':
+                req = {'action': 'settings', 'key': 'threshold', 'value': int(self.query_one('#threshold', Input).value)}
+            else:
+                lookup = {'save-gpu-restore': ('gpu-restore', 'gpu_restore'), 'save-fan-restore': ('fan-restore', 'fan_restore'), 'save-guard': ('guard', 'guard'), 'save-alarm': ('alarm', 'alarm')}
+                control, key = lookup[name]
+                value = self.query_one('#' + control, Select).value
+                if value not in ('on', 'off'):
+                    raise ValueError(self.tr('choose-value'))
+                req = {'action': 'settings', 'key': key, 'value': value == 'on'}
+            if not isinstance(req.get('value'), (str, int, type(None))):
+                raise ValueError(self.tr('choose-value'))
+            await asyncio.to_thread(hardware_request, req)
+            self.query_one('#status', Static).update(self.tr('success'))
+            self.poll_hardware()
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
+            self.query_one('#status', Static).update(self.tr('error') + ' ' + str(e))
 
     def action_profile(self, name):
         if name in ('powersave', 'normal', 'performance') and not self.busy:

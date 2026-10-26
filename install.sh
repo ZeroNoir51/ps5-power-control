@@ -49,3 +49,29 @@ sudo visudo -cf "$sudoers_tmp"
 sudo install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/ps5-power-control
 sudo visudo -cf /etc/sudoers.d/ps5-power-control
 printf '\nInstallation complete. Commands:\n  ps5-power-control\n  ps5-powersave\n  ps5-normal\n  ps5-performance\n'
+
+# Install the privileged hardware service; it accepts fixed operations only from this user.
+uid="$(id -u)"
+sudo install -d -o root -g root -m 0755 /usr/local/lib/ps5-power-control
+sudo install -o root -g root -m 0755 hardware/ps5_control_service.py /usr/local/lib/ps5-power-control/service.py
+unit_tmp="$(mktemp)"
+trap 'rm -f -- "$unit_tmp"' EXIT
+cat > "$unit_tmp" <<UNIT
+[Unit]
+Description=PS5 Power Control hardware service
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/ps5-power-control/service.py --uid $uid
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo install -o root -g root -m 0644 "$unit_tmp" /etc/systemd/system/ps5-power-control-hardware.service
+sudo systemctl daemon-reload
+sudo systemctl enable ps5-power-control-hardware.service
+sudo systemctl restart ps5-power-control-hardware.service
+printf 'Hardware service installed; open ps5-power-control for GPU and fan settings.\n'
