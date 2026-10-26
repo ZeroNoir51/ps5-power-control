@@ -6,6 +6,8 @@ An SSH-friendly terminal dashboard for **PS5 Linux / Ubuntu 26.04**. It monitors
 
 **Version: 0.2**
 
+**This project is intended for research purposes only.**
+
 PS5 Power Control was programmed with the assistance of OpenAI Codex.
 
 This software is provided "as is", without warranty of any kind, express or implied. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors, maintainers, and contributors accept no responsibility or liability for any damage, data loss, hardware failure, system instability, or other loss arising from installing, using, modifying, or being unable to use this software.
