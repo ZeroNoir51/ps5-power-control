@@ -19,9 +19,8 @@ HWMON = ROOT / 'class/hwmon'
 BEEP = ROOT / 'class/misc/ps5_buzzer/beep'
 STATE = Path('/var/lib/ps5-power-control/settings.json')
 SOCKET = Path('/run/ps5-power-control/control.sock')
-DEFAULT = {'fan_restore': False, 'gpu_restore': False, 'fan_target': None,
-           'gpu_governor': None, 'gpu_clock': None, 'gpu_clock_set': False, 'guard': False,
-           'alarm': False, 'threshold': 95}
+DEFAULT = {'alarm': False, 'threshold': 95}
+
 LOG = logging.getLogger('ps5-power-control')
 
 
@@ -62,16 +61,11 @@ def read_state():
     state = dict(DEFAULT)
     if not isinstance(data, dict):
         return state
-    for key in ('fan_restore', 'gpu_restore', 'guard', 'alarm', 'gpu_clock_set'):
-        if type(data.get(key)) is bool:
-            state[key] = data[key]
-    for key, low, high in [('fan_target', 40, 90), ('threshold', 80, 100), ('gpu_clock', 1, 10000)]:
-        value = data.get(key)
-        if type(value) is int and low <= value <= high:
-            state[key] = value
-    gov = data.get('gpu_governor')
-    if gov in ('simple_ondemand', 'performance', 'powersave', 'userspace'):
-        state['gpu_governor'] = gov
+    if type(data.get('alarm')) is bool:
+        state['alarm'] = data['alarm']
+    threshold = data.get('threshold')
+    if type(threshold) is int and 80 <= threshold <= 100:
+        state['threshold'] = threshold
     return state
 
 
@@ -79,8 +73,6 @@ class Controller:
     def __init__(self):
         self.lock = threading.RLock()
         self.state = read_state()
-        self.guard_active = False
-        self.prior_target = None
         self.alarm_active = False
         self.error = None
 
@@ -119,76 +111,16 @@ class Controller:
         if read(GPU / 'governor') != governor:
             raise OSError('GPU governor verification failed')
 
-    def gpu_clock(self, mhz):
-        available = self.gpu_status()['frequencies']
-        if mhz is not None and (type(mhz) is not int or mhz not in available):
-            raise ValueError('GPU clock must match an available frequency')
-        old_min, old_max = read(GPU / 'min_freq'), read(GPU / 'max_freq')
-        if old_min is None or old_max is None:
-            raise OSError('Cannot read existing GPU frequency limits')
-        try:
-            # Reset minimum before updating maximum to avoid min > max.
-            (GPU / 'min_freq').write_text('0')
-            (GPU / 'max_freq').write_text('0' if mhz is None else str(mhz * 1_000_000))
-            if mhz is not None:
-                (GPU / 'min_freq').write_text(str(mhz * 1_000_000))
-                status = self.gpu_status()
-                if status['min'] != mhz or status['max'] != mhz:
-                    raise OSError('GPU clock verification failed')
-        except (OSError, ValueError):
-            try:
-                (GPU / 'min_freq').write_text('0')
-                (GPU / 'max_freq').write_text(old_max)
-                (GPU / 'min_freq').write_text(old_min)
-            except OSError:
-                LOG.exception('Failed to restore previous GPU frequency limits')
-            raise
-
-    def restore(self):
-        with self.lock:
-            self.tick()
-            for name, callback in [('fan', self.restore_fan), ('GPU', self.restore_gpu)]:
-                try: callback()
-                except (OSError, ValueError) as e: LOG.error('%s restore failed: %s', name, e)
-
-    def restore_fan(self):
-        if self.state['fan_restore'] and self.state['fan_target'] is not None:
-            if self.guard_active:
-                self.prior_target = self.state['fan_target']
-            else:
-                self.write_fan(self.state['fan_target'])
-
-    def restore_gpu(self):
-        if self.state['gpu_restore']:
-            if self.state['gpu_governor']:
-                self.gpu_governor(self.state['gpu_governor'])
-            if self.state['gpu_clock_set']:
-                self.gpu_clock(self.state['gpu_clock'])
-
     def tick(self):
         with self.lock:
             temp = cpu_temp(sensors())
             if temp is None:
-                if self.state['guard'] or self.state['alarm']:
+                if self.state['alarm']:
                     self.error = 'CPU k10temp sensor unavailable'
                 return
             self.error = None
             hot = temp >= self.state['threshold']
             cold = temp <= self.state['threshold'] - 10
-            if self.state['guard'] and hot and not self.guard_active:
-                try:
-                    old = read(FAN)
-                    self.prior_target = int(old) if old and old.isdigit() and 40 <= int(old) <= 90 else 80
-                    self.write_fan(50)
-                    self.guard_active = True
-                except OSError as e:
-                    self.error = f'Guard failed: {e}'
-            elif self.guard_active and (cold or not self.state['guard']):
-                try:
-                    self.write_fan(self.prior_target)
-                    self.guard_active = False
-                except OSError as e:
-                    self.error = f'Guard restore failed: {e}'
             if self.state['alarm'] and hot and not self.alarm_active:
                 try:
                     BEEP.write_text('2')
@@ -203,21 +135,17 @@ class Controller:
             action = req.get('action')
             if action == 'status':
                 return {'state': self.state.copy(), 'fan': read(FAN), 'gpu': self.gpu_status(),
-                        'sensors': sensors(), 'guard_active': self.guard_active,
+                        'sensors': sensors(),
                         'alarm_active': self.alarm_active, 'error': self.error}
             if action == 'fan':
                 target = req.get('value')
                 if type(target) is not int or not 40 <= target <= 90: raise ValueError('Fan target must be 40–90 °C')
-                if self.guard_active: self.prior_target = target
-                else: self.write_fan(target)
-                self.state['fan_target'] = target
+                self.write_fan(target)
             elif action == 'gpu_governor':
-                self.gpu_governor(req.get('value')); self.state['gpu_governor'] = req['value']
-            elif action == 'gpu_clock':
-                self.gpu_clock(req.get('value')); self.state['gpu_clock'] = req.get('value'); self.state['gpu_clock_set'] = True
+                self.gpu_governor(req.get('value'))
             elif action == 'settings':
                 key, value = req.get('key'), req.get('value')
-                if key in ('fan_restore', 'gpu_restore', 'guard', 'alarm') and type(value) is bool:
+                if key == 'alarm' and type(value) is bool:
                     self.state[key] = value
                 elif key == 'threshold' and type(value) is int and 80 <= value <= 100:
                     self.state[key] = value
@@ -235,7 +163,7 @@ def main():
     lock = (SOCKET.parent / 'service.lock').open('w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     SOCKET.unlink(missing_ok=True)
-    ctl = Controller(); ctl.restore()
+    ctl = Controller()
     stop = threading.Event()
     def poll():
         while not stop.wait(2):

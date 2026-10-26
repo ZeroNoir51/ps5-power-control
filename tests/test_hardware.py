@@ -24,16 +24,17 @@ class HardwareTests(unittest.TestCase):
 
     def tearDown(self): self.tmp.cleanup()
 
-    def test_guard_hysteresis_and_deferred_target(self):
-        self.c.action({'action':'settings','key':'guard','value':True})
-        self.temp.write_text('95000'); self.c.tick()
-        self.assertEqual(service.read(service.FAN), '50')
-        self.c.action({'action':'fan','value':65})
-        self.temp.write_text('86000'); self.c.tick()
-        self.assertEqual(service.read(service.FAN), '50')
-        self.temp.write_text('85000'); self.c.tick()
-        self.assertEqual(service.read(service.FAN), '65')
-        self.assertFalse(self.c.guard_active)
+    def test_old_restore_and_guard_settings_are_ignored(self):
+        service.STATE.parent.mkdir(parents=True)
+        service.STATE.write_text('{"gpu_restore":true,"gpu_governor":"performance","gpu_clock_set":true,"gpu_clock":1000,"fan_restore":true,"fan_target":65,"guard":true,"alarm":true,"threshold":95}')
+        self.temp.write_text('97000')
+        other = service.Controller()
+        other.tick()
+        self.assertEqual(service.read(service.FAN), '80')
+        self.assertEqual(service.read(service.GPU / 'governor'), 'simple_ondemand')
+        self.assertEqual(service.read(service.GPU / 'max_freq'), '0')
+        self.assertEqual(service.read(service.BEEP), '2')
+        self.assertEqual(other.state, {'alarm':True,'threshold':95})
 
     def test_alarm_rearm_and_missing_sensor(self):
         self.c.action({'action':'settings','key':'alarm','value':True})
@@ -43,16 +44,13 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual(service.read(service.BEEP), '2')
         self.temp.unlink(); self.c.tick(); self.assertIn('unavailable', self.c.error)
 
-    def test_validated_gpu_lock_and_restore(self):
+    def test_gpu_governor_and_removed_commands(self):
         self.c.action({'action':'gpu_governor','value':'performance'})
-        self.c.action({'action':'gpu_clock','value':1000})
-        with self.assertRaises(ValueError): self.c.action({'action':'gpu_clock','value':999})
-        with self.assertRaises(ValueError): self.c.action({'action':'gpu_governor','value':'evil'})
-        self.c.action({'action':'settings','key':'gpu_restore','value':True})
-        other = service.Controller(); other.restore()
         self.assertEqual(service.read(service.GPU/'governor'), 'performance')
-        self.assertEqual(service.read(service.GPU/'max_freq'), '1000000000')
-        other.action({'action':'gpu_clock','value':None})
+        with self.assertRaises(ValueError): self.c.action({'action':'gpu_governor','value':'evil'})
+        for req in [{'action':'gpu_clock','value':1000}, {'action':'settings','key':'gpu_restore','value':True}, {'action':'settings','key':'fan_restore','value':True}, {'action':'settings','key':'guard','value':True}]:
+            with self.assertRaises(ValueError): self.c.action(req)
+        self.assertEqual(service.read(service.GPU/'min_freq'), '0')
         self.assertEqual(service.read(service.GPU/'max_freq'), '0')
 
     def test_invalid_settings(self):

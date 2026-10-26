@@ -196,11 +196,6 @@ class PowerApp(App):
         with Horizontal(classes='row'):
             yield Select([('Ondemand', 'simple_ondemand'), ('Performance', 'performance'), ('Powersave', 'powersave'), ('Userspace', 'userspace')], id='gpu-governor')
             yield Button(id='apply-gpu')
-        with Horizontal(classes='row'):
-            yield Input(placeholder='MHz / auto', id='gpu-clock')
-            yield Button(id='apply-clock')
-            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='gpu-restore')
-            yield Button(id='save-gpu-restore')
         yield Static(id='fan-title')
         yield Static(id='sensors', markup=False)
         with Horizontal(classes='row'):
@@ -208,11 +203,6 @@ class PowerApp(App):
             yield Button(id='apply-preset')
             yield Input(placeholder='40–90 °C', id='fan-target')
             yield Button(id='apply-target')
-        with Horizontal(classes='row'):
-            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='fan-restore')
-            yield Button(id='save-fan-restore')
-            yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='guard')
-            yield Button(id='save-guard')
         with Horizontal(classes='row'):
             yield Select([(self.tr('on'), 'on'), (self.tr('off'), 'off')], id='alarm')
             yield Button(id='save-alarm')
@@ -232,9 +222,9 @@ class PowerApp(App):
             self.query_one('#' + name, Button).label = f'{i} · {self.tr(name)}'
         for name in ('hardware-title', 'gpu-title', 'fan-title'):
             self.query_one('#' + name, Static).update(self.tr(name))
-        for name in ('apply-gpu', 'apply-clock', 'save-gpu-restore', 'apply-preset', 'apply-target', 'save-fan-restore', 'save-guard', 'save-alarm', 'save-threshold'):
+        for name in ('apply-gpu', 'apply-preset', 'apply-target', 'save-alarm', 'save-threshold'):
             self.query_one('#' + name, Button).label = self.tr(name)
-        for name in ('gpu-restore', 'fan-restore', 'guard', 'alarm'):
+        for name in ('alarm',):
             widget = self.query_one('#' + name, Select)
             old = widget.value
             widget.set_options([(self.tr('on'), 'on'), (self.tr('off'), 'off')])
@@ -296,7 +286,7 @@ class PowerApp(App):
             g = data['gpu']
             text = self.tr('gpu-status').format(gov=g['governor'] or '—', current=g['current'], target=g['target'], minimum=g['min'], maximum=g['max'], available=', '.join(map(str, g['frequencies'])) or '—')
             state = data['state']
-            text += '\n' + self.tr('state-status').format(fan=data['fan'] or '—', gpu_restore=state['gpu_restore'], fan_restore=state['fan_restore'], guard=state['guard'], alarm=state['alarm'], threshold=state['threshold'], active=data['guard_active'])
+            text += '\n' + self.tr('state-status').format(fan=data['fan'] or '—', alarm=state['alarm'], threshold=state['threshold'])
             if data['error']:
                 text += '\n' + data['error']
             self.query_one('#hwstatus', Static).update(text)
@@ -317,9 +307,6 @@ class PowerApp(App):
         try:
             if name == 'apply-gpu':
                 req = {'action': 'gpu_governor', 'value': self.query_one('#gpu-governor', Select).value}
-            elif name == 'apply-clock':
-                raw = self.query_one('#gpu-clock', Input).value.strip().lower()
-                req = {'action': 'gpu_clock', 'value': None if raw == 'auto' else int(raw)}
             elif name == 'apply-preset':
                 req = {'action': 'fan', 'value': self.query_one('#fan-preset', Select).value}
             elif name == 'apply-target':
@@ -327,7 +314,7 @@ class PowerApp(App):
             elif name == 'save-threshold':
                 req = {'action': 'settings', 'key': 'threshold', 'value': int(self.query_one('#threshold', Input).value)}
             else:
-                lookup = {'save-gpu-restore': ('gpu-restore', 'gpu_restore'), 'save-fan-restore': ('fan-restore', 'fan_restore'), 'save-guard': ('guard', 'guard'), 'save-alarm': ('alarm', 'alarm')}
+                lookup = {'save-alarm': ('alarm', 'alarm')}
                 control, key = lookup[name]
                 value = self.query_one('#' + control, Select).value
                 if value not in ('on', 'off'):
