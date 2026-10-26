@@ -1,10 +1,10 @@
-# PS5 Power Control v0.1
+# PS5 Power Control v0.2
 
 An SSH-friendly terminal dashboard for **PS5 Linux / Ubuntu 26.04**. It monitors CPU temperature, clock frequency, and the active CPU governor, with compact CPU, memory, temperature, and frequency meters. Three buttons and shortcuts select the CPU governor. **English is the default language** for the application, installation scripts, and documentation.
 
 ## Disclaimer
 
-**Version: 0.1**
+**Version: 0.2**
 
 PS5 Power Control was programmed with the assistance of OpenAI Codex.
 
@@ -54,7 +54,7 @@ cd ~/proyectos/ps5-power-control
 
 Replace `3.14` with the Python version reported by `python3 --version` if needed. A failed virtual environment may leave `.venv` in the project directory; `build.sh` removes **only an incomplete project-local `.venv`** automatically. Do not run `sudo pip install` or install Python libraries into Ubuntu's system Python.
 
-**Note:** `import ensurepip` in the system Python is *not* a reliable venv check on Debian/Ubuntu. Version 0.1 tests the actual `python3 -m venv` operation and pip availability in the created environment.
+**Note:** `import ensurepip` in the system Python is *not* a reliable venv check on Debian/Ubuntu. Version 0.2 tests the actual `python3 -m venv` operation and pip availability in the created environment.
 
 ## Usage
 
@@ -76,7 +76,7 @@ The program reads `/sys/devices/system/cpu/cpufreq/policy0` and looks for CPU te
 ./bin/ps5-power-control
 git init
 git add .
-git commit -m 'PS5 Power Control v0.1'
+git commit -m 'PS5 Power Control v0.2'
 ```
 
 The standalone executable is generated locally for your PS5's Linux architecture and saved as `bin/ps5-power-control`; the ZIP includes the **source**, not a pre-built binary. `build.sh` does not use sudo or install system-wide commands.

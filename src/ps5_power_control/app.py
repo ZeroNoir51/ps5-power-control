@@ -136,7 +136,7 @@ def meter(label, value, reference, unit, width=34):
 
 
 class PowerApp(App):
-    TITLE = 'PS5 Power Control 0.1'
+    TITLE = 'PS5 Power Control 0.2'
     CSS = """
     Screen { background: #101820; color: #e7f1f5; overflow-y: auto; }
     Header { background: #202e39; }
