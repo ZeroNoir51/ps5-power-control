@@ -1,6 +1,6 @@
 # Instalación de PS5 Power Control (Ubuntu y Bazzite)
 
-Guía rápida en español. La referencia completa está en el [README](../README.md) (en inglés).
+Guía rápida en español. Probado en PS5 con Ubuntu y Bazzite. La referencia completa está en el [README](../README.md) (en inglés).
 
 **Uso exclusivo para investigación, sin garantía.** Lee el aviso del README antes de instalar.
 

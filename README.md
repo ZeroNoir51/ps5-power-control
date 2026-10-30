@@ -2,6 +2,8 @@
 
 **Version 0.2** · Terminal dashboard for **PS5 Linux** on **Ubuntu** and **Bazzite**
 
+Tested on PS5 hardware running Ubuntu and Bazzite.
+
 PS5 Power Control is a terminal app that works locally or over SSH. It shows compact htop-style meters and lets you change CPU and GPU governors and the fan target temperature from the keyboard or mouse.
 
 > **This project is intended for research purposes only.** Read the [disclaimer](#disclaimer) before installing.
@@ -122,4 +124,4 @@ PS5 Power Control was programmed with the assistance of OpenAI Codex.
 
 This software is provided "as is", without warranty of any kind, express or implied. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors, maintainers, and contributors accept no responsibility or liability for any damage, data loss, hardware failure, system instability, or other loss arising from installing, using, modifying, or being unable to use this software.
 
-GPU and fan features have not been verified on PS5 hardware. Firmware may override clocks. Software cannot guarantee safe temperatures.
+Firmware may override clocks. Software cannot guarantee safe temperatures.
