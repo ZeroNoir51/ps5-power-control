@@ -87,7 +87,7 @@ class Controller:
 
     def write_fan(self, value):
         if type(value) is not int or not 40 <= value <= 90:
-            raise ValueError('Fan target must be an integer from 40 to 90 °C')
+            raise ValueError('Fan target must be a whole number from 40 to 90 °C')
         FAN.write_text(str(value))
         if read(FAN) != str(value):
             raise OSError('Fan target verification failed')
@@ -138,9 +138,7 @@ class Controller:
                         'sensors': sensors(),
                         'alarm_active': self.alarm_active, 'error': self.error}
             if action == 'fan':
-                target = req.get('value')
-                if type(target) is not int or not 40 <= target <= 90: raise ValueError('Fan target must be 40–90 °C')
-                self.write_fan(target)
+                self.write_fan(req.get('value'))
             elif action == 'gpu_governor':
                 self.gpu_governor(req.get('value'))
             elif action == 'settings':

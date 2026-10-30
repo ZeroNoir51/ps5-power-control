@@ -1,0 +1,19 @@
+Validation date: 2026-10-30
+Source commit: 6f42b3a43ea3b949803e4b3a8e494a38f37d6cfd
+PASS: all 16 source blobs match Git hashes.
+PASS: Python syntax (AST parse).
+PASS: bash -n on build/install and all profile scripts.
+PASS: XML parses; language IDs unique and matching EN/ES.
+test_alarm_rearm_and_missing_sensor (test_hardware.HardwareTests.test_alarm_rearm_and_missing_sensor) ... ok
+test_gpu_governor_and_removed_commands (test_hardware.HardwareTests.test_gpu_governor_and_removed_commands) ... ok
+test_invalid_settings (test_hardware.HardwareTests.test_invalid_settings) ... ok
+test_old_restore_and_guard_settings_are_ignored (test_hardware.HardwareTests.test_old_restore_and_guard_settings_are_ignored) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.036s
+
+OK
+
+NOT RUN: Textual UI (dependency absent in this workspace).
+NOT RUN: PyInstaller build, installation, systemd and physical PS5 validation.
+Prior UI simulations are reported history, not reproduced test artifacts.
