@@ -1,4 +1,3 @@
-from collections import deque
 from pathlib import Path
 import subprocess
 import os
@@ -10,10 +9,18 @@ import xml.etree.ElementTree as ET
 from rich.text import Text
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, HorizontalScroll, Vertical
-from textual.widgets import Button, Footer, Header, Static, Select, Input
+from textual.containers import HorizontalScroll, Vertical
+from textual.widget import Widget
+from textual.widgets import Button, Header, Static, Select, Input
+
+try:
+    from ps5_power_control import __version__
+except ImportError:  # Running app.py directly without the package on sys.path.
+    __version__ = '0.2'
 
 CPU = Path('/sys/devices/system/cpu/cpufreq/policy0')
+SOCKET_PATH = '/run/ps5-power-control/control.sock'
+PS5_POWER = '/usr/local/bin/ps5-power'
 
 
 def read_number(path, divisor=1):
@@ -49,7 +56,7 @@ def temperature():
 def hardware_request(request):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(3)
-        sock.connect('/run/ps5-power-control/control.sock')
+        sock.connect(SOCKET_PATH)
         sock.sendall((json.dumps(request) + '\n').encode())
         data = b''
         while b'\n' not in data and len(data) < 65536:
@@ -67,6 +74,10 @@ CPU_MAX = 3.5
 GPU_MAX_MHZ = 2230
 GPU_GOVERNORS = {"gpu-ondemand": "simple_ondemand", "gpu-performance": "performance", "gpu-powersave": "powersave", "gpu-userspace": "userspace"}
 FAN_PRESETS = {"fan-quiet": 85, "fan-default": 80, "fan-balanced": 72, "fan-cool": 65, "fan-max": 50}
+CPU_PROFILES = {"powersave": "powersave", "normal": "schedutil", "performance": "performance"}
+HW_BUTTONS = (*GPU_GOVERNORS, *FAN_PRESETS, 'apply-target', 'alarm-on', 'alarm-off', 'save-threshold')
+METERS = ('usage', 'memory', 'temp', 'freq', 'gpu-frequency')
+SUFFIX_WIDTH = 18  # Room reserved for "] 16.50/17.33 GiB" so all bars share one width.
 
 
 class CpuUsage:
@@ -124,10 +135,10 @@ def level(value, reference):
     return 'red' if ratio > .9 else '#ffaf00' if ratio >= .9 else 'green'
 
 
-def meter(label, value, reference, unit, width=34):
+def meter(label, value, reference, unit, width=34, label_width=12):
     scale = reference if unit == '%' else reference * 1.05
-    result = Text(f'{label:<12}', style='cyan')
-    result.append('[' , style='cyan')
+    result = Text(f'{label:<{label_width}}', style='cyan', no_wrap=True, overflow='crop')
+    result.append('[', style='cyan')
     if value is None:
         result.append(' ' * width + ']  —')
         return result
@@ -138,15 +149,34 @@ def meter(label, value, reference, unit, width=34):
     return result
 
 
+class Meter(Widget):
+    """One htop-style bar that sizes itself to its own width and never wraps."""
+    DEFAULT_CSS = 'Meter { height: 1; }'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.args = None
+
+    def show(self, label, value, reference, unit, label_width):
+        self.args = (label, value, reference, unit, label_width)
+        self.refresh()
+
+    def render(self):
+        if self.args is None:
+            return ''
+        label, value, reference, unit, label_width = self.args
+        width = max(5, min(70, self.content_size.width - label_width - 1 - SUFFIX_WIDTH))
+        return meter(label, value, reference, unit, width, label_width)
+
+
 class PowerApp(App):
-    TITLE = 'PS5 Power Control 0.2'
+    TITLE = f'PS5 Power Control {__version__}'
     CSS = """
     Screen { background: #101820; color: #e7f1f5; overflow-y: auto; }
     Header { background: #202e39; }
     Select { width: 30; margin: 0 1; }
     .section { height: auto; border: round #40515d; padding: 0 1; margin: 0 1; }
     .section-title { height: 1; color: #63d9e8; text-style: bold; }
-    .meter { height: 1; }
     #governor, #gpu-status, #fan-status, #gpu-sensors, #other-sensors, #legend, #help, #status { height: auto; }
     .controls { height: 3; scrollbar-size: 1 1; }
     .controls Button { min-width: 12; margin: 0 1 0 0; }
@@ -178,6 +208,7 @@ class PowerApp(App):
         self.status_key = 'ready'
         self.hardware = None
         self.hw_busy = False
+        self.label_width = 12
 
     def tr(self, key):
         return self.languages[self.lang].get(key, key)
@@ -187,15 +218,15 @@ class PowerApp(App):
         yield Select([('English', 'en'), ('Español', 'es')], value=self.lang, allow_blank=False, id='language')
         with Vertical(classes='section', id='cpu-section'):
             yield Static(id='cpu-title', classes='section-title')
-            for name in ('usage', 'memory', 'temp', 'freq'):
-                yield Static(id=name, classes='meter')
+            for name in METERS[:4]:
+                yield Meter(id=name)
             yield Static(id='governor', markup=False)
             with HorizontalScroll(classes='controls'):
                 for name in ('powersave', 'normal', 'performance'):
                     yield Button(id=name)
         with Vertical(classes='section', id='gpu-section'):
             yield Static(id='gpu-title', classes='section-title')
-            yield Static(id='gpu-frequency', classes='meter')
+            yield Meter(id='gpu-frequency')
             yield Static(id='gpu-status', markup=False)
             yield Static(id='gpu-sensors', markup=False)
             with HorizontalScroll(classes='controls'):
@@ -227,11 +258,12 @@ class PowerApp(App):
         self.poll_hardware()
 
     def translate(self):
-        for i, name in enumerate(('powersave', 'normal', 'performance'), 1):
+        self.label_width = max(12, *(len(self.tr(name)) for name in METERS))
+        for i, name in enumerate(CPU_PROFILES, 1):
             self.query_one('#' + name, Button).label = f'{i} · {self.tr(name)}'
         for name in ('cpu-title', 'gpu-title', 'fan-title'):
             self.query_one('#' + name, Static).update(self.tr(name))
-        for name in (*GPU_GOVERNORS, *FAN_PRESETS, 'apply-target', 'alarm-on', 'alarm-off', 'save-threshold'):
+        for name in HW_BUTTONS:
             self.query_one('#' + name, Button).label = self.tr(name)
         self.query_one('#legend', Static).update(self.tr('legend'))
         self.query_one('#help', Static).update(self.tr('help'))
@@ -239,6 +271,12 @@ class PowerApp(App):
         self.refresh_metrics()
         if self.hardware is not None:
             self.display_hardware(self.hardware)
+        else:
+            self.show_gpu_frequency(None, GPU_MAX_MHZ)
+
+    def show_gpu_frequency(self, mhz, reference_mhz):
+        value = mhz / 1000 if mhz is not None else None
+        self.query_one('#gpu-frequency', Meter).show(self.tr('gpu-frequency'), value, reference_mhz / 1000, 'GHz', self.label_width)
 
     def on_select_changed(self, event: Select.Changed):
         if event.value in self.languages:
@@ -254,24 +292,17 @@ class PowerApp(App):
         temp, source = temperature()
         freq = read_number(CPU / 'scaling_cur_freq', 1_000_000)
         used, total = memory()
-        width = max(5, min(70, self.size.width - 43))
         for name, value, reference, unit in [('usage', self.cpu_usage.sample(), 100, '%'), ('temp', temp, self.temp_max, '°C'), ('freq', freq, CPU_MAX, 'GHz'), ('memory', used, total or 1, 'GiB')]:
-            self.query_one('#' + name, Static).update(meter(self.tr(name), value, reference, unit, width))
+            self.query_one('#' + name, Meter).show(self.tr(name), value, reference, unit, self.label_width)
         try:
             governor = (CPU / 'scaling_governor').read_text().strip()
         except OSError:
             governor = self.tr('unavailable')
         self.query_one('#governor', Static).update(f"{self.tr('governor')}: {governor}")
 
-    def on_resize(self):
-        if self.is_mounted:
-            self.refresh_metrics()
-            if self.hardware is not None:
-                self.display_hardware(self.hardware)
-
     def on_button_pressed(self, event: Button.Pressed):
         name = event.button.id
-        if name in ('powersave', 'normal', 'performance'):
+        if name in CPU_PROFILES:
             self.action_profile(name)
         else:
             self.run_worker(self.hardware_action(name))
@@ -293,8 +324,7 @@ class PowerApp(App):
         current = g.get('current')
         frequencies = [v for v in (g.get('frequencies') or []) if isinstance(v, (int, float)) and v > 0]
         reference = max(frequencies) if frequencies else GPU_MAX_MHZ
-        value = current / 1000 if isinstance(current, (int, float)) and current >= 0 else None
-        self.query_one('#gpu-frequency', Static).update(meter(self.tr('gpu-frequency'), value, reference / 1000, 'GHz', max(5, min(70, self.size.width - 43))))
+        self.show_gpu_frequency(current if isinstance(current, (int, float)) and current >= 0 else None, reference)
         def format_mhz(value):
             return f'{value:.0f}' if isinstance(value, (int, float)) else '—'
         self.query_one('#gpu-status', Static).update(self.tr('gpu-status').format(gov=g.get('governor') or '—', target=format_mhz(g.get('target')), minimum=format_mhz(g.get('min')), maximum=format_mhz(g.get('max'))))
@@ -326,9 +356,9 @@ class PowerApp(App):
             self.display_hardware(data)
         except (OSError, ValueError, json.JSONDecodeError, KeyError) as e:
             self.hardware = None
-            for name in (*GPU_GOVERNORS, *FAN_PRESETS, 'apply-target', 'alarm-on', 'alarm-off', 'save-threshold'):
+            for name in HW_BUTTONS:
                 self.query_one('#' + name, Button).disabled = True
-            self.query_one('#gpu-frequency', Static).update(meter(self.tr('gpu-frequency'), None, GPU_MAX_MHZ / 1000, 'GHz', max(5, min(70, self.size.width - 43))))
+            self.show_gpu_frequency(None, GPU_MAX_MHZ)
             self.query_one('#gpu-status', Static).update(self.tr('service-error') + ': ' + str(e))
             self.query_one('#fan-status', Static).update(self.tr('service-error'))
             self.query_one('#gpu-sensors', Static).update('')
@@ -343,30 +373,35 @@ class PowerApp(App):
             elif name in FAN_PRESETS:
                 req = {'action': 'fan', 'value': FAN_PRESETS[name]}
             elif name == 'apply-target':
-                req = {'action': 'fan', 'value': int(self.query_one('#fan-target', Input).value)}
+                req = {'action': 'fan', 'value': self.input_number('fan-target')}
             elif name == 'save-threshold':
-                req = {'action': 'settings', 'key': 'threshold', 'value': int(self.query_one('#threshold', Input).value)}
+                req = {'action': 'settings', 'key': 'threshold', 'value': self.input_number('threshold')}
             elif name in ('alarm-on', 'alarm-off'):
                 req = {'action': 'settings', 'key': 'alarm', 'value': name == 'alarm-on'}
             else:
-                raise ValueError(self.tr('choose-value'))
+                return
             await asyncio.to_thread(hardware_request, req)
             self.query_one('#status', Static).update(self.tr('success'))
             self.poll_hardware()
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
             self.query_one('#status', Static).update(self.tr('hardware-error') + ': ' + str(e))
 
+    def input_number(self, name):
+        try:
+            return int(self.query_one('#' + name, Input).value.strip())
+        except ValueError:
+            raise ValueError(self.tr('enter-number')) from None
+
     def action_profile(self, name):
-        if name in ('powersave', 'normal', 'performance') and not self.busy:
+        if name in CPU_PROFILES and not self.busy:
             self.run_worker(self.switch_profile(name))
 
     async def switch_profile(self, name):
         self.busy = True
         self.status_key = 'switching'
         self.query_one('#status', Static).update(self.tr(self.status_key))
-        governor = {'powersave': 'powersave', 'normal': 'schedutil', 'performance': 'performance'}[name]
         try:
-            result = await asyncio.to_thread(subprocess.run, ['sudo', '-n', '/usr/local/bin/ps5-power', governor], capture_output=True, text=True, timeout=12)
+            result = await asyncio.to_thread(subprocess.run, ['sudo', '-n', PS5_POWER, CPU_PROFILES[name]], capture_output=True, text=True, timeout=12)
             self.status_key = 'success' if result.returncode == 0 else 'error'
         except (OSError, subprocess.TimeoutExpired):
             self.status_key = 'error'

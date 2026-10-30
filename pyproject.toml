@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ps5-power-control"
-version = "0.2"
-description = "Terminal power profile dashboard for PS5 Linux"
+dynamic = ["version"]
+description = "Terminal dashboard for CPU, GPU and fan control on PS5 Linux"
 requires-python = ">=3.10"
 dependencies = ["textual>=0.80,<9"]
 
 [project.scripts]
 ps5-power-control = "ps5_power_control.app:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "ps5_power_control.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

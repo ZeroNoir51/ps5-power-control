@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the standalone terminal executable. Run as a regular user.
+# Optional: build a standalone PyInstaller executable in bin/. Run as a regular user.
+# ./install.sh does not need this; it installs the app into a virtual environment.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -25,13 +26,10 @@ check_venv() {
 }
 
 if ! check_venv; then
-  cat >&2 <<MSG
-ERROR: Python $pyver cannot create a working virtual environment.
-On Ubuntu/Debian, install the matching venv package:
-  sudo apt update
-  sudo apt install -y python${pyver}-venv python3-pip
-Then run ./install.sh again (or ./build.sh for a build only).
-MSG
+  echo "ERROR: Python $pyver cannot create a working virtual environment." >&2
+  echo '  Ubuntu/Debian: sudo apt install python'"$pyver"'-venv python3-pip' >&2
+  echo '  Fedora:        sudo dnf install python3-pip' >&2
+  echo '  Bazzite:       rpm-ostree install python3-pip, then reboot' >&2
   exit 1
 fi
 
@@ -44,9 +42,8 @@ fi
 if [[ ! -d .venv ]]; then
   python3 -m venv .venv
 fi
-. .venv/bin/activate
-python -m pip install -e . pyinstaller
-python -m PyInstaller --noconfirm --clean --onefile --name ps5-power-control --paths src --add-data "src/ps5_power_control/languages:languages" src/ps5_power_control/app.py
+.venv/bin/python -m pip install -e . pyinstaller
+.venv/bin/python -m PyInstaller --noconfirm --clean --onefile --name ps5-power-control --paths src --add-data "src/ps5_power_control/languages:languages" src/ps5_power_control/app.py
 mkdir -p bin
 install -m 0755 dist/ps5-power-control bin/ps5-power-control
 echo "Executable: $PWD/bin/ps5-power-control"
